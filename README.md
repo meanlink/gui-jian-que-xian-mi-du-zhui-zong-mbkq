@@ -3,8 +3,8 @@
 密度聚类的真实业务分析小型项目。完整模拟客户、痛点、上下游、算法公式与一天工作剧本见 [BUSINESS.md](BUSINESS.md)。
 
 ## 模块与业务流程
-数据接入（JSON/CSV、字段验证、批次指纹）→ 参数化分析（异步 Python worker）→ 结果复核（指标、图形、明细、解释、批准）→ 定时分发（本地收件箱、CSV/JSON、SHA256）；另有业务总览和审计轨迹。
-三个贯穿全栈的实体：Dataset 数据批次、Job 分析任务、Report 分发计划；辅助 User、Audit、Delivery。
+数据接入（JSON/CSV、字段验证、批次指纹）→ 参数化分析（异步 Python worker）→ 结果复核（指标、图形、明细、解释、批准）→ 销项验收（缺陷带销项单、复测凭据、返工验收期、原参数重算）→ 定时分发（本地收件箱、CSV/JSON、SHA256）；另有业务总览和审计轨迹。
+三个贯穿全栈的实体：Dataset 数据批次、Job 分析任务、Report 分发计划；辅助 User、Audit、Delivery；销项验收含 ClosureOrder、AcceptancePeriod、Retest。
 
 ## 快速启动
 ```bash
@@ -18,9 +18,15 @@ docker compose exec -T backend python -m scripts.seed_demo
 ## 演示账号与权限
 |账号|密码|真实权限|
 |---|---|---|
-|admin@demo.local|Demo123!|接入、执行、批准、分发、暂停、读取与下载|
-|analyst@demo.local|Demo123!|接入、执行、读取与下载；不能批准或安排分发|
-|viewer@demo.local|Demo123!|只读与下载|
+|admin@demo.local|Demo123!|接入、执行、批准、销项建单、复测登记、**返工开新验收期**、分发、暂停、读取与下载|
+|analyst@demo.local|Demo123!|接入、执行、销项建单、复测登记、读取与下载；不能批准、返工或安排分发|
+|viewer@demo.local|Demo123!|只读与下载（含全部销项依据）|
+
+## 销项验收规则（页面「销项验收」）
+- 仅已批准试验的密集缺陷带可建销项单；建单即冻结原带范围、两侧邻域、固定 DBSCAN 参数与检修完工时间。
+- 复测登记采集时间与覆盖范围：采集晚于完工、覆盖原带及两侧邻域才有验收资格；零缺陷复测也保留覆盖凭据。
+- 按销项单固定参数对复测批次重算：原带内仍有核心点或等级≥4 高等级孤立点则不予销项；结论与销项状态同事务生效。
+- 返工开启新验收期，旧期证据封存保留但不用于新期；新期复测采集时间还须晚于该期开启（返工）时间；同期同批次重复登记幂等，不新增结论。
 
 ## 技术与本地开发
 Python 3.12 / FastAPI / SQLAlchemy / NumPy / SciPy / scikit-learn；PostgreSQL 16；Redis 7；Nginx；原生 HTML CSS JavaScript ES modules（用户指定）。后端所有校验、持久化和算法在服务端。无前端打包步骤。
@@ -29,7 +35,7 @@ Python 3.12 / FastAPI / SQLAlchemy / NumPy / SciPy / scikit-learn；PostgreSQL 1
 ## 目录与工程约定
 backend/src/{models,schemas,services,routes,controllers,middlewares,constants,config,utils}；backend/scripts/seed_demo.py；backend/migrations/initial.py。
 frontend/src/{api,stores,types,components/common,hooks,pages,router,utils,constants}。
-Role 枚举：admin/analyst/viewer；JobStatus：queued/running/completed/failed。后端 backend/src/constants/enums.py，前端 frontend/src/constants/enums.js；路由权限在 middlewares/auth.py；页面按相同角色控制操作入口。
+Role 枚举：admin/analyst/viewer；JobStatus：queued/running/completed/failed；ClosureStatus：open/closed；PeriodStatus：active/superseded/accepted；RetestResult：passed/rejected。后端 backend/src/constants/enums.py，前端 frontend/src/constants/enums.js；路由权限在 middlewares/auth.py；页面按相同角色控制操作入口。
 
 ## 环境变量与 Docker
 COMPOSE_PROJECT_NAME=rail-density；FRONTEND_PORT=18210；BACKEND_PORT=19210；DB_PORT=17710；DB_PASSWORD、JWT_SECRET 见 .env.example；SEED_DEMO 默认 true。共享命名产物卷供后端下载与 worker 写入，数据库/Redis 各持久卷。

@@ -35,7 +35,8 @@ def seed_records():
     return sorted(rows, key=lambda row: row["mileage_km"])
 
 
-def analyze(records, params):
+def parse_inputs(records, params):
+    """参数与记录校验，返回 (eps米, min_points整数, 里程数组, 横偏数组, 等级数组)。"""
     try:
         eps = float(params.get("eps_m", 100))
         raw_min = float(params.get("min_points", 5))
@@ -54,7 +55,25 @@ def analyze(records, params):
         raise ValueError("里程、横向偏差与复核等级必须完整且为数值。") from exc
     if not np.isfinite(np.column_stack([mileage, lateral, severity])).all() or (mileage < 0).any() or not np.isin(severity, [1, 2, 3, 4, 5]).all():
         raise ValueError("里程须非负有限，横向偏差须有限，复核等级须为1~5整数。")
-    labels = DBSCAN(eps=eps, min_samples=minimum).fit_predict((mileage * 1000).reshape(-1, 1))
+    return eps, minimum, mileage, lateral, severity
+
+
+def run_clustering(records, params):
+    """同一口径的一维DBSCAN，输出供分析与销项复测共用的结构化结果。"""
+    eps, minimum, mileage, lateral, severity = parse_inputs(records, params)
+    model = DBSCAN(eps=eps, min_samples=minimum).fit((mileage * 1000).reshape(-1, 1))
+    labels = model.labels_
+    core_mask = np.zeros(len(records), dtype=bool)
+    core_mask[model.core_sample_indices_] = True
+    return {"eps": eps, "min_points": minimum, "mileage": mileage, "lateral": lateral,
+            "severity": severity, "labels": labels, "core_mask": core_mask,
+            "records": records}
+
+
+def analyze(records, params):
+    c = run_clustering(records, params)
+    mileage, lateral, severity, labels = c["mileage"], c["lateral"], c["severity"], c["labels"]
+    eps = c["eps"]
     clusters = sorted([int(v) for v in np.unique(labels) if v >= 0], key=lambda v: float(np.min(mileage[labels == v])))
     rows = []
     for display, cluster in enumerate(clusters, 1):
